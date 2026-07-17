@@ -38,8 +38,6 @@ export function usePaginatedMergeRequests(options: {
   projectRef.current = options.project;
   const groupRef = useRef(options.group);
   groupRef.current = options.group;
-  const limitRef = useRef(options.limit);
-  limitRef.current = options.limit;
   const cacheKeyRef = useRef(options.cacheKey);
   if (cacheKeyRef.current !== options.cacheKey) {
     resetMRListGqlCursors(cacheKeyRef.current);
@@ -47,7 +45,7 @@ export function usePaginatedMergeRequests(options: {
   }
 
   const { data, isLoading, error, revalidate, pagination } = useCachedPromise(
-    (cacheKey: string) => async (paginationOptions: { page: number }) => {
+    (cacheKey: string, limit?: number) => async (paginationOptions: { page: number }) => {
       const params = buildParamsRef.current();
       if (projectRef.current || groupRef.current || params.scope !== MRScope.all) {
         try {
@@ -57,9 +55,9 @@ export function usePaginatedMergeRequests(options: {
             params,
             project: projectRef.current,
             group: groupRef.current,
-            pageSize: limitRef.current,
+            pageSize: limit,
           });
-          return { data: mergeRequests, hasMore: limitRef.current ? false : hasMore };
+          return { data: mergeRequests, hasMore: limit ? false : hasMore };
         } catch {
           // Fall back to REST for older GitLab schemas.
         }
@@ -77,11 +75,11 @@ export function usePaginatedMergeRequests(options: {
             : "merge_requests",
         fallbackParams,
         paginationOptions.page + 1,
-        limitRef.current ?? MR_LIST_PAGE_SIZE,
+        limit ?? MR_LIST_PAGE_SIZE,
       );
-      return { data: data.map(jsonDataToMergeRequest), hasMore: limitRef.current ? false : hasMore };
+      return { data: data.map(jsonDataToMergeRequest), hasMore: limit ? false : hasMore };
     },
-    [options.cacheKey],
+    [options.cacheKey, options.limit],
     {
       execute: options.execute,
       keepPreviousData: options.keepPreviousData,

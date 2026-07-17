@@ -10,7 +10,7 @@ const MR_STATE_FILTERS: { state: MRState; title: string }[] = [
   { state: MRState.closed, title: "Closed" },
 ];
 
-function MergeRequestStatusSubmenu(props: { state: MRState; onSelect: (state: MRState) => void }) {
+export function MergeRequestStatusSubmenu(props: { state: MRState; onSelect: (state: MRState) => void }) {
   return (
     <ActionPanel.Submenu
       title={

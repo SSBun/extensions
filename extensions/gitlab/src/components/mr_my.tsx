@@ -1,4 +1,5 @@
 import { ActionPanel, List } from "@raycast/api";
+import { useCachedState } from "@raycast/utils";
 import { useMemo, useState } from "react";
 import { MergeRequest, Project } from "../gitlabapi";
 import {
@@ -14,6 +15,7 @@ import {
 } from "./mr";
 import { RefreshMergeRequestsAction } from "./mr_actions";
 import { ListPagination, usePaginatedMergeRequests } from "./mr_data";
+import { MergeRequestStatusSubmenu } from "./mr_filter";
 import { MyProjectsDropdown } from "./project";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -26,6 +28,8 @@ function MyMRList(props: {
   pagination?: ListPagination;
   searchText?: string | undefined;
   onSearchTextChange?: (text: string) => void;
+  state: MRState;
+  onSelectState: (state: MRState) => void;
   searchBarAccessory?:
     | React.ReactElement<List.Dropdown.Props, string | React.JSXElementConstructor<any>>
     | null
@@ -49,6 +53,9 @@ function MyMRList(props: {
             <MRListDetailsToggleAction isShowingDetail={isShowingDetail} onToggle={toggleListDetails} />
             <MRListMetadataToggleAction isShowingDetail={isShowingDetail} />
           </ActionPanel.Section>
+          <ActionPanel.Section title="Filter">
+            <MergeRequestStatusSubmenu state={props.state} onSelect={props.onSelectState} />
+          </ActionPanel.Section>
           <ActionPanel.Section>
             <RefreshMergeRequestsAction onRefresh={props.performRefetch} />
           </ActionPanel.Section>
@@ -65,6 +72,7 @@ function MyMRList(props: {
             showAuthor={false}
             isShowingDetail={isShowingDetail}
             onToggleListDetails={toggleListDetails}
+            filterAction={<MergeRequestStatusSubmenu state={props.state} onSelect={props.onSelectState} />}
             refreshAction={<RefreshMergeRequestsAction onRefresh={props.performRefetch} />}
           />
         ))}
@@ -82,13 +90,14 @@ export function MyMergeRequests(props: {
 }) {
   const [project, setProject] = useState<Project>();
   const [localSearchText, setLocalSearchText] = useState("");
+  const [state, setState] = useCachedState<MRState>(`my-mrs-${props.scope}-state`, props.state);
   const searchText = props.searchText ?? localSearchText;
   const {
     mrs: raw,
     isLoading,
     performRefetch,
     pagination,
-  } = useMyMergeRequests(props.scope, props.state, project, undefined, false, searchText);
+  } = useMyMergeRequests(props.scope, state, project, undefined, false, searchText);
   const mrs = useMemo(
     () => (project ? raw.filter((mergeRequest) => mergeRequest.project_id === project.id) : raw),
     [project, raw],
@@ -105,6 +114,8 @@ export function MyMergeRequests(props: {
       searchText={searchText}
       onSearchTextChange={props.onSearchTextChange ?? setLocalSearchText}
       searchBarAccessory={<MyProjectsDropdown onChange={setProject} />}
+      state={state}
+      onSelectState={setState}
     />
   );
 }
@@ -129,8 +140,11 @@ export function useMyMergeRequests(
     cacheKey: `mymrs_${scope}_${state}_${searchText}_${labels ? labels.join(",") : "[]"}_${hideArchived}`,
     buildParams: () => ({
       ...buildMRListParams(searchText, scope, state),
+      order_by: "created_at",
+      sort: "desc",
       ...(labels && { labels }),
       ...(hideArchived && { non_archived: true }),
     }),
+    limit: 30,
   });
 }

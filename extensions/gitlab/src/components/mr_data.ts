@@ -24,6 +24,7 @@ export function usePaginatedMergeRequests(options: {
   group?: Group;
   execute?: boolean;
   keepPreviousData?: boolean;
+  limit?: number;
 }): {
   mrs: MergeRequest[];
   isLoading: boolean;
@@ -37,6 +38,8 @@ export function usePaginatedMergeRequests(options: {
   projectRef.current = options.project;
   const groupRef = useRef(options.group);
   groupRef.current = options.group;
+  const limitRef = useRef(options.limit);
+  limitRef.current = options.limit;
   const cacheKeyRef = useRef(options.cacheKey);
   if (cacheKeyRef.current !== options.cacheKey) {
     resetMRListGqlCursors(cacheKeyRef.current);
@@ -54,8 +57,9 @@ export function usePaginatedMergeRequests(options: {
             params,
             project: projectRef.current,
             group: groupRef.current,
+            pageSize: limitRef.current,
           });
-          return { data: mergeRequests, hasMore };
+          return { data: mergeRequests, hasMore: limitRef.current ? false : hasMore };
         } catch {
           // Fall back to REST for older GitLab schemas.
         }
@@ -73,9 +77,9 @@ export function usePaginatedMergeRequests(options: {
             : "merge_requests",
         fallbackParams,
         paginationOptions.page + 1,
-        MR_LIST_PAGE_SIZE,
+        limitRef.current ?? MR_LIST_PAGE_SIZE,
       );
-      return { data: data.map(jsonDataToMergeRequest), hasMore };
+      return { data: data.map(jsonDataToMergeRequest), hasMore: limitRef.current ? false : hasMore };
     },
     [options.cacheKey],
     {

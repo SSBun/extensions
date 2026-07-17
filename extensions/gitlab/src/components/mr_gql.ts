@@ -843,8 +843,9 @@ export async function fetchMergeRequestsGqlPage(options: {
   params: Record<string, any>;
   project?: Project;
   group?: Group;
+  pageSize?: number;
 }): Promise<{ mergeRequests: MergeRequest[]; hasMore: boolean }> {
-  const { cacheKey, page, params, project, group } = options;
+  const { cacheKey, page, params, project, group, pageSize = MR_LIST_PAGE_SIZE } = options;
   const scope = (params.scope as MRScope | undefined) ?? MRScope.all;
   if (!project && !group && scope === MRScope.all) {
     return { mergeRequests: [], hasMore: false };
@@ -869,7 +870,7 @@ export async function fetchMergeRequestsGqlPage(options: {
       const after = index === 0 ? undefined : cursors[index - 1];
       const connection = await queryMergeRequestConnection(source, {
         ...filters,
-        first: MR_LIST_PAGE_SIZE,
+        first: pageSize,
         after,
       });
       cursors[index] = connection.pageInfo.endCursor ?? "";
@@ -882,7 +883,7 @@ export async function fetchMergeRequestsGqlPage(options: {
   const after = page > 0 ? cursors[page - 1] : undefined;
   const connection = await queryMergeRequestConnection(source, {
     ...filters,
-    first: MR_LIST_PAGE_SIZE,
+    first: pageSize,
     after,
   });
   cursors[page] = connection.pageInfo.endCursor ?? "";

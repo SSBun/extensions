@@ -179,6 +179,7 @@ export function SearchMyMergeRequests(props: { project?: Project } = {}) {
     project,
     execute: !projectsLoading,
     keepPreviousData: true,
+    limit: 30,
   });
   const sectionTitle = useMemo(
     () => buildMRSearchSectionTitle(mrState, scope, draftOnly, orderBy),

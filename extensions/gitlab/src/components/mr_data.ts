@@ -5,7 +5,7 @@ import { gitlab } from "../common";
 import { Group, jsonDataToMergeRequest, MergeRequest, Project } from "../gitlabapi";
 import { getErrorMessage } from "../utils";
 import { MRScope } from "./mr";
-import { fetchMergeRequestsGqlPage, MR_LIST_PAGE_SIZE, resetMRListGqlCursors } from "./mr_gql";
+import { MR_LIST_PAGE_SIZE } from "./mr_gql";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -38,34 +38,14 @@ export function usePaginatedMergeRequests(options: {
   projectRef.current = options.project;
   const groupRef = useRef(options.group);
   groupRef.current = options.group;
-  const cacheKeyRef = useRef(options.cacheKey);
-  if (cacheKeyRef.current !== options.cacheKey) {
-    resetMRListGqlCursors(cacheKeyRef.current);
-    cacheKeyRef.current = options.cacheKey;
-  }
 
   const { data, isLoading, error, revalidate, pagination } = useCachedPromise(
-    (cacheKey: string, limit?: number) => async (paginationOptions: { page: number }) => {
+    (_cacheKey: string, limit?: number) => async (paginationOptions: { page: number }) => {
       const params = buildParamsRef.current();
-      if (projectRef.current || groupRef.current || params.scope !== MRScope.all) {
-        try {
-          const { mergeRequests, hasMore } = await fetchMergeRequestsGqlPage({
-            cacheKey,
-            page: paginationOptions.page,
-            params,
-            project: projectRef.current,
-            group: groupRef.current,
-            pageSize: limit,
-          });
-          return { data: mergeRequests, hasMore: limit ? false : hasMore };
-        } catch {
-          // Fall back to REST for older GitLab schemas.
-        }
-      }
-      const fallbackParams = { ...params };
-      if (fallbackParams.scope === MRScope.reviews_for_me) {
-        fallbackParams.scope = MRScope.all;
-        fallbackParams.reviewer_username = (await gitlab.getMyself()).username;
+      const restParams = { ...params };
+      if (restParams.scope === MRScope.reviews_for_me) {
+        restParams.scope = MRScope.all;
+        restParams.reviewer_username = (await gitlab.getMyself()).username;
       }
       const { data, hasMore } = await gitlab.fetchPaged(
         projectRef.current
@@ -73,7 +53,7 @@ export function usePaginatedMergeRequests(options: {
           : groupRef.current
             ? `groups/${groupRef.current.id}/merge_requests`
             : "merge_requests",
-        fallbackParams,
+        restParams,
         paginationOptions.page + 1,
         limit ?? MR_LIST_PAGE_SIZE,
       );
@@ -92,6 +72,6 @@ export function usePaginatedMergeRequests(options: {
     isLoading,
     error: error ? getErrorMessage(error) : undefined,
     performRefetch: revalidate,
-    pagination,
+    pagination: options.limit ? undefined : pagination,
   };
 }

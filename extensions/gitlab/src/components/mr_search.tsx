@@ -239,6 +239,7 @@ export function SearchMyMergeRequests(props: { project?: Project } = {}) {
                 key={mergeRequest.id}
                 mr={mergeRequest}
                 refreshData={performRefetch}
+                showAuthor={!!project}
                 showCIStatus={true}
                 isShowingDetail={isShowingDetail}
                 onToggleListDetails={toggleListDetails}

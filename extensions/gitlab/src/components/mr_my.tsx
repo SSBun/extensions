@@ -2,6 +2,7 @@ import { ActionPanel, List } from "@raycast/api";
 import { useMemo, useState } from "react";
 import { MergeRequest, Project } from "../gitlabapi";
 import {
+  buildMRListParams,
   MRListDetailsToggleAction,
   MRListMetadataToggleAction,
   MRListEmptyView,
@@ -80,7 +81,14 @@ export function MyMergeRequests(props: {
   onSearchTextChange?: (text: string) => void;
 }) {
   const [project, setProject] = useState<Project>();
-  const { mrs: raw, isLoading, performRefetch, pagination } = useMyMergeRequests(props.scope, props.state, project);
+  const [localSearchText, setLocalSearchText] = useState("");
+  const searchText = props.searchText ?? localSearchText;
+  const {
+    mrs: raw,
+    isLoading,
+    performRefetch,
+    pagination,
+  } = useMyMergeRequests(props.scope, props.state, project, undefined, false, searchText);
   const mrs = useMemo(
     () => (project ? raw.filter((mergeRequest) => mergeRequest.project_id === project.id) : raw),
     [project, raw],
@@ -94,8 +102,8 @@ export function MyMergeRequests(props: {
       }
       performRefetch={performRefetch}
       pagination={pagination}
-      searchText={props.searchText}
-      onSearchTextChange={props.onSearchTextChange}
+      searchText={searchText}
+      onSearchTextChange={props.onSearchTextChange ?? setLocalSearchText}
       searchBarAccessory={<MyProjectsDropdown onChange={setProject} />}
     />
   );
@@ -107,6 +115,7 @@ export function useMyMergeRequests(
   project: Project | undefined,
   labels: string[] | undefined = undefined,
   hideArchived = false,
+  searchText = "",
 ): {
   mrs: MergeRequest[];
   isLoading: boolean;
@@ -117,10 +126,9 @@ export function useMyMergeRequests(
   // `project` is intentionally excluded from the cache key; the project filter is
   // applied client-side in `MyMergeRequests` against the (global) fetched pages.
   return usePaginatedMergeRequests({
-    cacheKey: `mymrs_${scope}_${state}_${labels ? labels.join(",") : "[]"}_${hideArchived}`,
+    cacheKey: `mymrs_${scope}_${state}_${searchText}_${labels ? labels.join(",") : "[]"}_${hideArchived}`,
     buildParams: () => ({
-      state,
-      scope,
+      ...buildMRListParams(searchText, scope, state),
       ...(labels && { labels }),
       ...(hideArchived && { non_archived: true }),
     }),

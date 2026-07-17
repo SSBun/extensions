@@ -160,13 +160,6 @@ export function SearchMyMergeRequests(props: { project?: Project } = {}) {
   );
   const hasProjects = myprojects.length > 0;
 
-  useEffect(() => {
-    if (!myprojects.length || projectId !== undefined) {
-      return;
-    }
-    setProjectId(`${myprojects[0].id}`);
-  }, [myprojects, projectId, setProjectId]);
-
   const params = useMemo(() => {
     const requestParams = buildMRListParams(search, scope, mrState);
     appendMROrderByParams(requestParams, orderBy);
@@ -181,10 +174,10 @@ export function SearchMyMergeRequests(props: { project?: Project } = {}) {
     performRefetch,
     pagination,
   } = usePaginatedMergeRequests({
-    cacheKey: `mymrssearch_${project?.id ?? "none"}_${hashRecord(params)}`,
+    cacheKey: `mymrssearch_${project?.id ?? "all"}_${hashRecord(params)}`,
     buildParams: () => params,
     project,
-    execute: !!project,
+    execute: !projectsLoading,
     keepPreviousData: true,
   });
   const sectionTitle = useMemo(
@@ -194,7 +187,7 @@ export function SearchMyMergeRequests(props: { project?: Project } = {}) {
 
   return (
     <List
-      isLoading={projectsLoading || isLoading || (hasProjects && !project)}
+      isLoading={projectsLoading || isLoading}
       pagination={pagination}
       searchText={search}
       onSearchTextChange={setSearch}
@@ -205,7 +198,6 @@ export function SearchMyMergeRequests(props: { project?: Project } = {}) {
         <MyProjectsDropdown
           projects={myprojects}
           value={projectId}
-          includeAllItem={false}
           onChange={(project) => {
             const nextId = project ? `${project.id}` : undefined;
             setProjectId((current) => (current === nextId ? current : nextId));

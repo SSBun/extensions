@@ -1,9 +1,11 @@
 import { List } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
 import { useRef } from "react";
-import { Group, MergeRequest, Project } from "../gitlabapi";
+import { gitlab } from "../common";
+import { Group, jsonDataToMergeRequest, MergeRequest, Project } from "../gitlabapi";
 import { getErrorMessage } from "../utils";
-import { fetchMergeRequestsGqlPage, resetMRListGqlCursors } from "./mr_gql";
+import { MRScope } from "./mr";
+import { fetchMergeRequestsGqlPage, MR_LIST_PAGE_SIZE, resetMRListGqlCursors } from "./mr_gql";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -43,14 +45,37 @@ export function usePaginatedMergeRequests(options: {
 
   const { data, isLoading, error, revalidate, pagination } = useCachedPromise(
     (cacheKey: string) => async (paginationOptions: { page: number }) => {
-      const { mergeRequests, hasMore } = await fetchMergeRequestsGqlPage({
-        cacheKey,
-        page: paginationOptions.page,
-        params: buildParamsRef.current(),
-        project: projectRef.current,
-        group: groupRef.current,
-      });
-      return { data: mergeRequests, hasMore };
+      const params = buildParamsRef.current();
+      if (projectRef.current || groupRef.current || params.scope !== MRScope.all) {
+        try {
+          const { mergeRequests, hasMore } = await fetchMergeRequestsGqlPage({
+            cacheKey,
+            page: paginationOptions.page,
+            params,
+            project: projectRef.current,
+            group: groupRef.current,
+          });
+          return { data: mergeRequests, hasMore };
+        } catch {
+          // Fall back to REST for older GitLab schemas.
+        }
+      }
+      const fallbackParams = { ...params };
+      if (fallbackParams.scope === MRScope.reviews_for_me) {
+        fallbackParams.scope = MRScope.all;
+        fallbackParams.reviewer_username = (await gitlab.getMyself()).username;
+      }
+      const { data, hasMore } = await gitlab.fetchPaged(
+        projectRef.current
+          ? `projects/${projectRef.current.id}/merge_requests`
+          : groupRef.current
+            ? `groups/${groupRef.current.id}/merge_requests`
+            : "merge_requests",
+        fallbackParams,
+        paginationOptions.page + 1,
+        MR_LIST_PAGE_SIZE,
+      );
+      return { data: data.map(jsonDataToMergeRequest), hasMore };
     },
     [options.cacheKey],
     {

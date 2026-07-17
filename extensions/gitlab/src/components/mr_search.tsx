@@ -197,7 +197,7 @@ export function SearchMyMergeRequests(props: { project?: Project } = {}) {
       throttle
       searchBarAccessory={
         <MyProjectsDropdown
-          projects={myprojects}
+          projects={myprojects.slice(0, 50)}
           value={projectId}
           onChange={(project) => {
             const nextId = project ? `${project.id}` : undefined;

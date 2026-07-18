@@ -2,6 +2,7 @@ import { LocalStorage } from "@raycast/api";
 import { useEffect, useState } from "react";
 import { isValidStatus, Status } from "../../gitlabapi";
 import { getErrorMessage } from "../../utils";
+import { MAX_STATUS_PRESETS } from "../../limits";
 
 const presetsStoreKey = "presets";
 
@@ -10,7 +11,7 @@ export async function wipePresets(): Promise<void> {
 }
 
 async function storePresets(presets: Status[]) {
-  await LocalStorage.setItem(presetsStoreKey, JSON.stringify(presets));
+  await LocalStorage.setItem(presetsStoreKey, JSON.stringify(presets.slice(0, MAX_STATUS_PRESETS)));
 }
 
 async function restorePresets(): Promise<Status[] | undefined> {
@@ -27,6 +28,9 @@ async function restorePresets(): Promise<Status[] | undefined> {
         };
         if (isValidStatus(status)) {
           result.push(status);
+          if (result.length >= MAX_STATUS_PRESETS) {
+            break;
+          }
         }
       }
       return result;

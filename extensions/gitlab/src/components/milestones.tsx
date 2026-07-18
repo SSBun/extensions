@@ -10,7 +10,7 @@ import { GitLabOpenInBrowserAction } from "./actions";
 const GET_MILESTONES = gql`
   query GetProjectMilestones($fullPath: ID!) {
     project(fullPath: $fullPath) {
-      milestones(sort: DUE_DATE_DESC) {
+      milestones(first: 100, sort: DUE_DATE_DESC) {
         nodes {
           id
           title
@@ -31,7 +31,7 @@ const GET_MILESTONES = gql`
 const GET_GROUP_MILESTONES = gql`
   query GetGroupMilestones($fullPath: ID!) {
     group(fullPath: $fullPath) {
-      milestones(includeDescendants: true) {
+      milestones(first: 100, includeDescendants: true) {
         nodes {
           id
           title

@@ -8,6 +8,13 @@ import { pipeline } from "stream";
 const streamPipeline = util.promisify(pipeline);
 import https from "https";
 import { getPreferences } from "./utils";
+import {
+  MAX_COLLECTION_ITEMS,
+  MAX_JOB_LOG_CHARS,
+  MAX_LIST_DESCRIPTION_CHARS,
+  MAX_LIST_ITEMS,
+  MAX_README_CHARS,
+} from "./limits";
 
 function readCACertFileSync(filename: string): Buffer | undefined {
   try {
@@ -49,6 +56,40 @@ export function getHttpAgent(): https.Agent | undefined {
 /* eslint-disable @typescript-eslint/no-explicit-any -- REST fetch boundary; parsers use GitLab*Json types below */
 
 const activateAPILogging = false;
+
+async function readBoundedResponseText(
+  response: Response,
+  maxChars: number,
+  keepTail = false,
+): Promise<{ text: string; truncated: boolean }> {
+  if (!response.body) {
+    return { text: "", truncated: false };
+  }
+  const decoder = new TextDecoder();
+  let text = "";
+  let truncated = false;
+  let stoppedEarly = false;
+  for await (const chunk of response.body as NodeJS.ReadableStream & AsyncIterable<Uint8Array | string>) {
+    text += decoder.decode(typeof chunk === "string" ? Buffer.from(chunk) : chunk, { stream: true });
+    if (text.length > maxChars) {
+      truncated = true;
+      text = keepTail ? text.slice(-maxChars) : text.slice(0, maxChars);
+      if (!keepTail) {
+        (response.body as NodeJS.ReadableStream & { destroy?: () => void }).destroy?.();
+        stoppedEarly = true;
+        break;
+      }
+    }
+  }
+  if (!stoppedEarly) {
+    text += decoder.decode();
+    if (text.length > maxChars) {
+      truncated = true;
+      text = keepTail ? text.slice(-maxChars) : text.slice(0, maxChars);
+    }
+  }
+  return { text, truncated };
+}
 
 interface GitLabApiErrorBody {
   error?: string;
@@ -282,12 +323,12 @@ export function jsonDataToMergeRequest(mr: GitLabMergeRequestJson): MergeRequest
     merged_at: mr.merged_at ?? "",
     closed_at: mr.closed_at ?? "",
     author: maybeUserFromJson(mr.author),
-    assignees: mr.assignees.map(userFromJson),
+    assignees: mr.assignees?.map(userFromJson) ?? [],
     reviewers: mr.reviewers?.map(userFromJson) || [],
     project_id: mr.project_id,
-    description: mr.description ?? "",
+    description: (mr.description ?? "").slice(0, MAX_LIST_DESCRIPTION_CHARS),
     reference_full: mr.references?.full ?? "",
-    labels: mr.labels as Label[],
+    labels: (mr.labels ?? []) as Label[],
     source_branch: mr.source_branch,
     target_branch: mr.target_branch,
     merge_commit_sha: mr.merge_commit_sha ?? "",
@@ -316,7 +357,7 @@ export function jsonDataToIssue(issue: GitLabIssueJson): Issue {
   };
   return {
     title: issue.title,
-    description: issue.description ?? "",
+    description: (issue.description ?? "").slice(0, MAX_LIST_DESCRIPTION_CHARS),
     web_url: issue.web_url,
     id: issue.id,
     iid: issue.iid,
@@ -325,10 +366,10 @@ export function jsonDataToIssue(issue: GitLabIssueJson): Issue {
     updated_at: issue.updated_at,
     created_at: issue.created_at,
     author: maybeUserFromJson(issue.author),
-    assignees: issue.assignees.map(userFromJson),
+    assignees: issue.assignees?.map(userFromJson) ?? [],
     project_id: issue.project_id,
     milestone: dataToMilestone(issue.milestone),
-    labels: issue.labels as Label[],
+    labels: (issue.labels ?? []) as Label[],
     user_notes_count: issue.user_notes_count ?? 0,
     merge_requests_count: issue.merge_requests_count ?? 0,
   };
@@ -787,7 +828,7 @@ export class GitLab {
   }
 
   public async fetch(url: string, params: { [key: string]: string } = {}, all = false): Promise<any> {
-    const per_page = all ? 100 : 50;
+    const per_page = all ? MAX_COLLECTION_ITEMS : 50;
     const fetchPage = async (page: number): Promise<Response> => {
       const pagedParams = { ...params, per_page: params.per_page ?? `${per_page}`, page: `${page}` };
       const queryString = paramString(pagedParams);
@@ -801,20 +842,24 @@ export class GitLab {
     };
     try {
       const response = await fetchPage(1);
-      let json = await toJsonOrError(response);
-      if (!all) {
+      const json = await toJsonOrError(response);
+      if (!all || !Array.isArray(json)) {
         return json;
       }
 
+      const items = json.slice(0, MAX_COLLECTION_ITEMS);
       let next_page = getNextPageNumber(response);
-      while (next_page) {
+      while (next_page && items.length < MAX_COLLECTION_ITEMS) {
         logAPI(next_page);
         const page_response = await fetchPage(next_page);
         const page_content = await toJsonOrError(page_response);
-        json = json.concat(page_content);
+        if (!Array.isArray(page_content)) {
+          break;
+        }
+        items.push(...page_content.slice(0, MAX_COLLECTION_ITEMS - items.length));
         next_page = getNextPageNumber(page_response);
       }
-      return json;
+      return items;
     } catch (error: any) {
       throw Error(error); // rethrow error, otherwise raycast could not catch the error
     }
@@ -836,7 +881,8 @@ export class GitLab {
         method: "GET",
       });
       const data = await toJsonOrError(response);
-      const hasMore = getNextPageNumber(response) !== undefined;
+      const requestedPageSize = Number(params.per_page ?? perPage) || perPage;
+      const hasMore = page * requestedPageSize < MAX_LIST_ITEMS && getNextPageNumber(response) !== undefined;
       return { data, hasMore };
     } catch (error: any) {
       throw Error(error); // rethrow error, otherwise raycast could not catch the error
@@ -1111,6 +1157,10 @@ export class GitLab {
     if (!params.min_access_level) {
       params.min_access_level = "30";
     }
+    if (!params.order_by) {
+      params.order_by = "last_activity_at";
+      params.sort = "desc";
+    }
     return await this.fetch("projects", params, all).then((projects) => {
       return (projects as GitLabProjectJson[]).map((project) => dataToProject(project));
     });
@@ -1185,19 +1235,27 @@ export class GitLab {
 
   async getTodos(params: Record<string, any>, all?: boolean): Promise<Todo[]> {
     const issueItems: Todo[] = await this.fetch("todos", params, all).then((issues) => {
-      return (issues as GitLabTodoJson[]).map((issue) => ({
-        title: issue.target.title,
-        action_name: issue.action_name,
-        target_url: issue.target_url,
-        target_type: issue.target_type,
-        target: issue.target,
-        id: issue.id,
-        project_with_namespace: issue.project?.name_with_namespace ?? "",
-        group: issue.group,
-        author: maybeUserFromJson(issue.author),
-        created_at: issue.created_at,
-        updated_at: issue.updated_at,
-      }));
+      return (issues as GitLabTodoJson[]).map((issue) => {
+        const target =
+          issue.target_type === "MergeRequest"
+            ? jsonDataToMergeRequest(issue.target as GitLabMergeRequestJson)
+            : issue.target_type === "Issue"
+              ? jsonDataToIssue(issue.target as GitLabIssueJson)
+              : issue.target;
+        return {
+          title: issue.target.title,
+          action_name: issue.action_name,
+          target_url: issue.target_url,
+          target_type: issue.target_type,
+          target,
+          id: issue.id,
+          project_with_namespace: issue.project?.name_with_namespace ?? "",
+          group: issue.group,
+          author: maybeUserFromJson(issue.author),
+          created_at: issue.created_at,
+          updated_at: issue.updated_at,
+        };
+      });
     });
 
     if (params.search) {
@@ -1290,19 +1348,26 @@ export class GitLab {
         const data = (await this.fetch(`groups/${group.id}/epics`, params as Record<string, any>, true)) || [];
         for (const epic of data) {
           epics.push(epic);
+          if (epics.length >= MAX_LIST_ITEMS) {
+            break;
+          }
         }
       } catch (error: any) {
         logAPI(`skip during error ${error}`);
       }
+      if (epics.length >= MAX_LIST_ITEMS) {
+        break;
+      }
     }
     if (params.include_ancestor_groups === true && !groupid) {
       return (
-        epics.filter(
-          (epic, index, allEpics) => allEpics.findIndex((candidate) => candidate.id === epic.id) === index,
-        ) || []
+        epics
+          .slice(0, MAX_LIST_ITEMS)
+          .filter((epic, index, allEpics) => allEpics.findIndex((candidate) => candidate.id === epic.id) === index) ||
+        []
       );
     }
-    return epics;
+    return epics.slice(0, MAX_LIST_ITEMS);
   }
 
   async getUserStatus(): Promise<Status> {
@@ -1349,7 +1414,8 @@ export class GitLab {
     if (!response.ok) {
       throw new Error(`unexpected response ${response.statusText}`);
     }
-    return await response.text();
+    const { text, truncated } = await readBoundedResponseText(response, MAX_README_CHARS);
+    return truncated ? `${text}\n\n> README truncated. Open it in GitLab to read the full file.` : text;
   }
 
   async triggerPipeline(
@@ -1405,7 +1471,7 @@ export class GitLab {
     if (!response.ok) {
       throw new Error(`http status ${response.status}`);
     }
-    return await response.text();
+    return (await readBoundedResponseText(response, MAX_JOB_LOG_CHARS + 1, true)).text;
   }
 
   async getMyRecentPipelines(opts: { perProject?: number; maxProjects?: number } = {}): Promise<{
@@ -1478,9 +1544,10 @@ export function searchData<Type>(
     ignoreLocation: params.ignoreLocation || true,
   };
   const search = params.search;
+  const boundedData = Array.isArray(data) ? data.slice(0, MAX_LIST_ITEMS) : [];
 
   if (search && search.length > 0) {
-    const fuse = new Fuse(data, options);
+    const fuse = new Fuse(boundedData, options);
     const searchResult = fuse.search(search, { limit: params.limit });
 
     const items: Type[] = searchResult.map((result) => {
@@ -1488,7 +1555,7 @@ export function searchData<Type>(
     });
     return items;
   } else {
-    return data.map((result: any) => {
+    return boundedData.slice(0, params.limit).map((result: any) => {
       return result as Type;
     });
   }

@@ -5,6 +5,7 @@ import { StatusFormPresetCreate, StatusFormPresetEdit, StatusFormSet } from "./f
 import { wipePresets, predefinedPresets } from "./presets";
 import { clearDurations, clearDurationText, getClearDurationDate } from "./utils";
 import { showFailureToast } from "@raycast/utils";
+import { MAX_STATUS_PRESETS } from "../../limits";
 
 export function StatusSetCustomAction(props: {
   setCurrentStatus: React.Dispatch<React.SetStateAction<Status | undefined>>;
@@ -61,6 +62,9 @@ export function StatusPresetCreateAction(props: {
   setPresets: React.Dispatch<React.SetStateAction<Status[]>>;
 }) {
   const { push, pop } = useNavigation();
+  if (props.presets.length >= MAX_STATUS_PRESETS) {
+    return null;
+  }
   return (
     <Action
       title="Create Status Preset"

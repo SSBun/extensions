@@ -4,6 +4,7 @@ import { Group, Label, MergeRequest, Project, User } from "../gitlabapi";
 import { getIdFromGqlId, projectFullPathFromWebUrl } from "../utils";
 import { MRScope, MRState } from "./mr";
 import { MROrderBy, MRSearchOrderBy } from "./mr_sort";
+import { MAX_COLLECTION_ITEMS, MAX_LIST_DESCRIPTION_CHARS } from "../limits";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -515,7 +516,7 @@ export function gqlNodeToMergeRequest(node: GqlMRListNode, currentUsername?: str
     assignees: node.assignees?.nodes.map((user) => gqlUserToUser(user)).filter((user): user is User => !!user) ?? [],
     reviewers: node.reviewers?.nodes.map((user) => gqlUserToUser(user)).filter((user): user is User => !!user) ?? [],
     project_id: node.targetProjectId,
-    description: node.description ?? "",
+    description: (node.description ?? "").slice(0, MAX_LIST_DESCRIPTION_CHARS),
     project_web_url: node.project?.webUrl ?? "",
     project_full_path: node.project?.fullPath ?? projectFullPathFromWebUrl(node.project?.webUrl ?? ""),
     reference_full: node.reference ?? "",
@@ -900,27 +901,29 @@ export async function fetchMergeRequestsGqlList(options: {
   group?: Group;
   limit?: number;
 }): Promise<MergeRequest[]> {
-  const limit = options.limit ?? 50;
+  const limit = Math.min(options.limit ?? 50, MAX_COLLECTION_ITEMS);
   const cacheKey = `list_${Date.now()}`;
   const all: MergeRequest[] = [];
   let page = 0;
   let hasMore = true;
 
-  while (hasMore && all.length < limit) {
-    const { mergeRequests, hasMore: nextPage } = await fetchMergeRequestsGqlPage({
-      cacheKey,
-      page,
-      params: options.params,
-      project: options.project,
-      group: options.group,
-    });
-    all.push(...mergeRequests);
-    hasMore = nextPage;
-    page += 1;
+  try {
+    while (hasMore && all.length < limit) {
+      const { mergeRequests, hasMore: nextPage } = await fetchMergeRequestsGqlPage({
+        cacheKey,
+        page,
+        params: options.params,
+        project: options.project,
+        group: options.group,
+      });
+      all.push(...mergeRequests);
+      hasMore = nextPage;
+      page += 1;
+    }
+    return all.slice(0, limit);
+  } finally {
+    resetMRListGqlCursors(cacheKey);
   }
-
-  resetMRListGqlCursors(cacheKey);
-  return all.slice(0, limit);
 }
 
 export async function fetchMergeRequestGqlByProjectIid(project: Project, iid: number): Promise<MergeRequest> {

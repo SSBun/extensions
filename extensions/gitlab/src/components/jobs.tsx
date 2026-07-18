@@ -15,6 +15,7 @@ import { GitLabOpenInBrowserAction } from "./actions";
 import { fetchLatestPipelineIidByCommitShaGql } from "./pipelines_gql";
 import { Project } from "../gitlabapi";
 import { GitLabIcons } from "../icons";
+import { MAX_LIST_ITEMS } from "../limits";
 
 export interface JobArtifact {
   file_type: string;
@@ -41,10 +42,10 @@ const GET_PIPELINE_JOBS = gql`
   query GetPipelineJobs($fullPath: ID!, $pipelineIID: ID!) {
     project(fullPath: $fullPath) {
       pipeline(iid: $pipelineIID) {
-        stages {
+        stages(first: 20) {
           nodes {
             name
-            jobs {
+            jobs(first: 20) {
               nodes {
                 id
                 name
@@ -56,7 +57,7 @@ const GET_PIPELINE_JOBS = gql`
                     id
                   }
                 }
-                artifacts {
+                artifacts(first: 20) {
                   nodes {
                     fileType
                     name
@@ -252,11 +253,15 @@ export function useSearch(
         variables: { fullPath, pipelineIID: pipelineIid },
       });
       const stages: Record<string, Job[]> = {};
+      let jobCount = 0;
       for (const stage of data.data.project.pipeline.stages.nodes) {
+        if (jobCount >= MAX_LIST_ITEMS) {
+          break;
+        }
         if (!stages[stage.name]) {
           stages[stage.name] = [];
         }
-        for (const job of stage.jobs.nodes) {
+        for (const job of stage.jobs.nodes.slice(0, MAX_LIST_ITEMS - jobCount)) {
           stages[stage.name].push({
             id: job.id,
             projectId: getIdFromGqlId(job.pipeline.project.id),
@@ -272,6 +277,7 @@ export function useSearch(
               }),
             ),
           });
+          jobCount++;
         }
       }
       return stages;

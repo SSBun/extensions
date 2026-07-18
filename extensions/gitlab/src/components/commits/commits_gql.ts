@@ -3,7 +3,7 @@ import { getGitLabGQL, gitlab } from "../../common";
 import { getIdFromGqlId } from "../../utils";
 import { Commit } from "./types";
 
-const MR_COMMITS_PAGE_SIZE = 20;
+export const MR_COMMITS_PAGE_SIZE = 20;
 
 const COMMIT_LIST_FIELDS = gql`
   fragment CommitListFields on Commit {
@@ -101,6 +101,10 @@ const projectCommitEndCursorsByCacheKey = new Map<string, string[]>();
 
 export function resetProjectCommitsGqlCursors(cacheKey: string): void {
   projectCommitEndCursorsByCacheKey.delete(cacheKey);
+}
+
+export function resetMRCommitsGqlCursors(cacheKey: string): void {
+  endCursorsByCacheKey.delete(cacheKey);
 }
 
 function resolveAvatarUrl(avatarUrl: string | null | undefined): string | undefined {

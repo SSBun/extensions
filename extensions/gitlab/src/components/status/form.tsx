@@ -9,6 +9,8 @@ import {
   getClearDurationDate,
 } from "./utils";
 import { gitlab } from "../../common";
+import { MAX_COLLECTION_ITEMS } from "../../limits";
+import { useMemo } from "react";
 
 export function StatusForm(props: {
   submitTitle: string;
@@ -41,10 +43,16 @@ function StatusDurationDropDown(props: { id: string; defaultValue: string | unde
 }
 
 function StatusEmojiDropDown(props: { id: string; title: string; defaultValue?: string | undefined }) {
+  const aliases = useMemo(() => {
+    const limited = getAllEmojiSymbolAliases().slice(0, MAX_COLLECTION_ITEMS);
+    return props.defaultValue && !limited.includes(props.defaultValue)
+      ? [props.defaultValue, ...limited.slice(0, MAX_COLLECTION_ITEMS - 1)]
+      : limited;
+  }, [props.defaultValue]);
   return (
     <Form.Dropdown id={props.id} title={props.title} defaultValue={props.defaultValue}>
       <Form.Dropdown.Item key="-" title="-" value="" />
-      {getAllEmojiSymbolAliases().map((alias) => (
+      {aliases.map((alias) => (
         <Form.Dropdown.Item key={alias} title={`:${alias}:`} value={alias} icon={emojiSymbol(alias)} />
       ))}
     </Form.Dropdown>

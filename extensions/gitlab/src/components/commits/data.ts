@@ -1,9 +1,16 @@
 import { List } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { gitlab } from "../../common";
-import { fetchMRCommitsGqlPage, fetchProjectCommitsGqlPage, resetProjectCommitsGqlCursors } from "./commits_gql";
+import {
+  fetchMRCommitsGqlPage,
+  fetchProjectCommitsGqlPage,
+  MR_COMMITS_PAGE_SIZE,
+  resetMRCommitsGqlCursors,
+  resetProjectCommitsGqlCursors,
+} from "./commits_gql";
 import { Commit } from "./types";
+import { hasMoreWithinLimit } from "../../limits";
 
 export type ListPagination = List.Props["pagination"];
 
@@ -29,6 +36,8 @@ export function usePaginatedProjectCommits(options: {
     cacheKeyRef.current = options.cacheKey;
   }
 
+  useEffect(() => () => resetProjectCommitsGqlCursors(options.cacheKey), [options.cacheKey]);
+
   const { data, isLoading, revalidate, pagination } = useCachedPromise(
     (cacheKey: string) => async (paginationOptions: { page: number }) => {
       const { commits, hasMore } = await fetchProjectCommitsGqlPage({
@@ -37,7 +46,10 @@ export function usePaginatedProjectCommits(options: {
         projectFullPath: projectFullPathRef.current,
         ref: refNameRef.current,
       });
-      return { data: commits, hasMore };
+      return {
+        data: commits,
+        hasMore: hasMoreWithinLimit(hasMore, paginationOptions.page, MR_COMMITS_PAGE_SIZE),
+      };
     },
     [options.cacheKey],
     {
@@ -72,6 +84,8 @@ export function usePaginatedMergeRequestCommits(options: {
   const mrIIDRef = useRef(options.mrIID);
   mrIIDRef.current = options.mrIID;
 
+  useEffect(() => () => resetMRCommitsGqlCursors(options.cacheKey), [options.cacheKey]);
+
   const { data, isLoading, revalidate, pagination } = useCachedPromise(
     (cacheKey: string) => async (paginationOptions: { page: number }) => {
       const project = await gitlab.getProject(projectIDRef.current);
@@ -81,7 +95,10 @@ export function usePaginatedMergeRequestCommits(options: {
         projectFullPath: project.fullPath,
         mrIID: mrIIDRef.current,
       });
-      return { data: commits, hasMore };
+      return {
+        data: commits,
+        hasMore: hasMoreWithinLimit(hasMore, paginationOptions.page, MR_COMMITS_PAGE_SIZE),
+      };
     },
     [options.cacheKey],
     {

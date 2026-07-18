@@ -18,6 +18,7 @@ import {
   StatusPresetSetWithDurationAction,
   StatusSetCustomAction,
 } from "./actions";
+import { MAX_STATUS_PRESETS } from "../../limits";
 
 export default function StatusList() {
   const { data, isLoading } = useCachedPromise(() => gitlab.getUserStatus(), []);
@@ -40,7 +41,7 @@ export default function StatusList() {
         />
       </List.Section>
       <List.Section title="Presets">
-        {presets.map((preset, index) => (
+        {presets.slice(0, MAX_STATUS_PRESETS).map((preset, index) => (
           <StatusPresetListItem
             key={`${preset.message}_${preset.emoji}_${index}`}
             status={preset}

@@ -2,7 +2,7 @@ import { gql } from "@apollo/client";
 import { getGitLabGQL, gitlab } from "../common";
 import { Branch, Project } from "../gitlabapi";
 
-const BRANCH_LIST_PAGE_SIZE = 20;
+export const BRANCH_LIST_PAGE_SIZE = 20;
 const BRANCH_DROPDOWN_LIMIT = 100;
 
 const BRANCH_NAMES = gql`
@@ -41,6 +41,10 @@ type RestBranchJson = Branch & {
 };
 
 const branchRulesByProjectId = new Map<number, BranchRule[]>();
+
+export function resetBranchRules(projectId: number): void {
+  branchRulesByProjectId.delete(projectId);
+}
 
 async function getBranchRules(project: Project): Promise<BranchRule[]> {
   const cached = branchRulesByProjectId.get(project.id);

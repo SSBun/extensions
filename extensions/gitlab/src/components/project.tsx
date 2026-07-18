@@ -1,8 +1,9 @@
 import { Action, ActionPanel, Color, Icon, List } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { gitlab } from "../common";
 import { Project, searchData } from "../gitlabapi";
+import { MAX_COLLECTION_ITEMS } from "../limits";
 import { getFirstChar, projectIconUrl } from "../utils";
 import {
   CloneProjectInGitPod,
@@ -148,7 +149,12 @@ export function MyProjectsDropdown(props: {
   includeAllItem?: boolean;
 }): React.ReactNode {
   const { projects: hookProjects } = useMyProjects();
-  const myprojects = props.projects ?? hookProjects;
+  const myprojects = useMemo(() => {
+    const projects = props.projects ?? hookProjects;
+    const limited = projects.slice(0, MAX_COLLECTION_ITEMS);
+    const selected = projects.find((project) => `${project.id}` === props.value);
+    return selected && !limited.some((project) => project.id === selected.id) ? [...limited, selected] : limited;
+  }, [hookProjects, props.projects, props.value]);
   const includeAllItem = props.includeAllItem !== false;
   return (
     <List.Dropdown

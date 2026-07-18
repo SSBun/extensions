@@ -21,9 +21,12 @@ import {
   createMRDiscussionNoteGql,
   fetchMRDiscussionDiffGql,
   fetchMRDiscussionsGqlPage,
+  MR_DISCUSSIONS_PAGE_SIZE,
+  resetMRDiscussionGqlCursors,
   resolveAvatarUrl,
   toggleMRDiscussionResolveGql,
 } from "./mr_discussions_gql";
+import { hasMoreWithinLimit, MAX_COLLECTION_ITEMS } from "../limits";
 
 function discussionMarkdown(
   notes: MRDiscussionNote[],
@@ -204,6 +207,7 @@ function MRDiscussionListItem(props: {
 
 export function MRDiscussionList(props: { mr: MergeRequest }) {
   const [selectedDiscussionId, setSelectedDiscussionId] = useState<string>();
+  const cacheKey = `mr_discussions_${props.mr.project_full_path}_${props.mr.iid}`;
   const {
     data: discussions,
     isLoading,
@@ -217,13 +221,17 @@ export function MRDiscussionList(props: { mr: MergeRequest }) {
         projectFullPath,
         mrIID,
       });
-      return { data: discussions, hasMore };
+      return {
+        data: discussions,
+        hasMore: hasMoreWithinLimit(hasMore, options.page, MR_DISCUSSIONS_PAGE_SIZE, MAX_COLLECTION_ITEMS),
+      };
     },
     [props.mr.project_full_path, props.mr.iid],
     {
       initialData: [],
     },
   );
+  useEffect(() => () => resetMRDiscussionGqlCursors(cacheKey), [cacheKey]);
   useEffect(() => {
     if (!selectedDiscussionId && discussions[0]) {
       setSelectedDiscussionId(discussions[0].id);

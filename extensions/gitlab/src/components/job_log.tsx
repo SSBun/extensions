@@ -4,8 +4,7 @@ import { getGitLabGQL, gitlab } from "../common";
 import { getIdFromGqlId } from "../utils";
 import { showFailureToast } from "@raycast/utils";
 import { Job } from "./jobs";
-
-const MAX_LOG_CHARS = 100_000;
+import { MAX_JOB_LOG_CHARS } from "../limits";
 
 const ESC = String.fromCharCode(27);
 const BEL = String.fromCharCode(7);
@@ -29,10 +28,10 @@ function buildMarkdown(trace: string, status: string): string {
     return "_No log output yet._";
   }
   const cleaned = stripAnsi(trace);
-  const truncated = cleaned.length > MAX_LOG_CHARS;
-  const tail = truncated ? cleaned.slice(-MAX_LOG_CHARS) : cleaned;
+  const truncated = cleaned.length > MAX_JOB_LOG_CHARS;
+  const tail = truncated ? cleaned.slice(-MAX_JOB_LOG_CHARS) : cleaned;
   const header = truncated
-    ? `> Log truncated to last ${Math.round(MAX_LOG_CHARS / 1024)} KB. Open in browser for the full trace.\n\n`
+    ? `> Log truncated to last ${Math.round(MAX_JOB_LOG_CHARS / 1024)} KB. Open in browser for the full trace.\n\n`
     : "";
   return `${header}\`\`\`\n${tail}\n\`\`\``;
 }

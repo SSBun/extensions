@@ -1,5 +1,13 @@
 # GitLab Changelog
 
+## [Bound worker memory usage] - 2026-07-18
+
+- Limit merge request lists and searches to the latest 30 results without load-more pagination
+- Cap account-wide REST collections, dropdowns, ordinary lists, discussions, and status presets
+- Release GraphQL cursor and branch-rule state when views close or filters change
+- Stream and truncate large job logs and README files before they enter Raycast state
+- Bound list descriptions and discussion context; normalize Todo targets before caching
+
 ## [GraphQL merge requests, discussions, and CI] - 2026-07-09
 
 - Migrate merge request, commit, and pipeline lists to GraphQL with cursor pagination (20 items per page)

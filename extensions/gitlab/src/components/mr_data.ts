@@ -5,17 +5,16 @@ import { gitlab } from "../common";
 import { Group, jsonDataToMergeRequest, MergeRequest, Project } from "../gitlabapi";
 import { getErrorMessage } from "../utils";
 import { MRScope } from "./mr";
-import { MR_LIST_PAGE_SIZE } from "./mr_gql";
+import { MAX_MERGE_REQUEST_ITEMS } from "../limits";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 export type ListPagination = List.Props["pagination"];
 
 /**
- * Paginated Merge Request data provider backed by `useCachedPromise`.
- * The fetch function is kept constant (per `useCachedPromise` contract): `cacheKey`
- * drives revalidation, while `buildParams`/`project`/`group` are read through refs so the
- * latest values are used without recreating the function.
+ * Bounded Merge Request data provider backed by `useCachedPromise`.
+ * Raycast invokes the pagination-shaped callback for the initial page, but this hook
+ * deliberately returns no pagination so a list can never retain more than 30 MRs.
  */
 export function usePaginatedMergeRequests(options: {
   cacheKey: string;
@@ -38,16 +37,17 @@ export function usePaginatedMergeRequests(options: {
   projectRef.current = options.project;
   const groupRef = useRef(options.group);
   groupRef.current = options.group;
+  const limit = Math.min(options.limit ?? MAX_MERGE_REQUEST_ITEMS, MAX_MERGE_REQUEST_ITEMS);
 
-  const { data, isLoading, error, revalidate, pagination } = useCachedPromise(
-    (_cacheKey: string, limit?: number) => async (paginationOptions: { page: number }) => {
+  const { data, isLoading, error, revalidate } = useCachedPromise(
+    (_cacheKey: string, resultLimit: number) => async (paginationOptions: { page: number }) => {
       const params = buildParamsRef.current();
       const restParams = { ...params };
       if (restParams.scope === MRScope.reviews_for_me) {
         restParams.scope = MRScope.all;
         restParams.reviewer_username = (await gitlab.getMyself()).username;
       }
-      const { data, hasMore } = await gitlab.fetchPaged(
+      const { data } = await gitlab.fetchPaged(
         projectRef.current
           ? `projects/${projectRef.current.id}/merge_requests`
           : groupRef.current
@@ -55,11 +55,11 @@ export function usePaginatedMergeRequests(options: {
             : "merge_requests",
         restParams,
         paginationOptions.page + 1,
-        limit ?? MR_LIST_PAGE_SIZE,
+        resultLimit,
       );
-      return { data: data.map(jsonDataToMergeRequest), hasMore: limit ? false : hasMore };
+      return { data: data.map(jsonDataToMergeRequest), hasMore: false };
     },
-    [options.cacheKey, options.limit],
+    [options.cacheKey, limit],
     {
       execute: options.execute,
       keepPreviousData: options.keepPreviousData,
@@ -72,6 +72,6 @@ export function usePaginatedMergeRequests(options: {
     isLoading,
     error: error ? getErrorMessage(error) : undefined,
     performRefetch: revalidate,
-    pagination: options.limit ? undefined : pagination,
+    pagination: undefined,
   };
 }

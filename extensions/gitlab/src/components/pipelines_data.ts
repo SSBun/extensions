@@ -1,8 +1,14 @@
 import { List } from "@raycast/api";
 import { useCachedPromise } from "@raycast/utils";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Pipeline } from "../gitlabapi";
-import { fetchMRPipelinesGqlPage, fetchProjectPipelinesGqlPage } from "./pipelines_gql";
+import {
+  fetchMRPipelinesGqlPage,
+  fetchProjectPipelinesGqlPage,
+  PIPELINE_LIST_PAGE_SIZE,
+  resetPipelineListGqlCursors,
+} from "./pipelines_gql";
+import { hasMoreWithinLimit } from "../limits";
 
 export type ListPagination = List.Props["pagination"];
 
@@ -20,6 +26,8 @@ export function usePaginatedProjectPipelines(options: {
   const projectFullPathRef = useRef(options.projectFullPath);
   projectFullPathRef.current = options.projectFullPath;
 
+  useEffect(() => () => resetPipelineListGqlCursors(options.cacheKey), [options.cacheKey]);
+
   const { data, isLoading, revalidate, pagination } = useCachedPromise(
     (cacheKey: string) => async (paginationOptions: { page: number }) => {
       const { pipelines, hasMore } = await fetchProjectPipelinesGqlPage({
@@ -27,7 +35,10 @@ export function usePaginatedProjectPipelines(options: {
         page: paginationOptions.page,
         projectFullPath: projectFullPathRef.current,
       });
-      return { data: pipelines, hasMore };
+      return {
+        data: pipelines,
+        hasMore: hasMoreWithinLimit(hasMore, paginationOptions.page, PIPELINE_LIST_PAGE_SIZE),
+      };
     },
     [options.cacheKey],
     {
@@ -62,6 +73,8 @@ export function usePaginatedMRPipelines(options: {
   const mrIIDRef = useRef(options.mrIID);
   mrIIDRef.current = options.mrIID;
 
+  useEffect(() => () => resetPipelineListGqlCursors(options.cacheKey), [options.cacheKey]);
+
   const { data, isLoading, revalidate, pagination } = useCachedPromise(
     (cacheKey: string) => async (paginationOptions: { page: number }) => {
       const { pipelines, hasMore } = await fetchMRPipelinesGqlPage({
@@ -70,7 +83,10 @@ export function usePaginatedMRPipelines(options: {
         projectFullPath: projectFullPathRef.current,
         mrIID: mrIIDRef.current,
       });
-      return { data: pipelines, hasMore };
+      return {
+        data: pipelines,
+        hasMore: hasMoreWithinLimit(hasMore, paginationOptions.page, PIPELINE_LIST_PAGE_SIZE),
+      };
     },
     [options.cacheKey],
     {

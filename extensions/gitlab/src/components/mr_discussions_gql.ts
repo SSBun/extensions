@@ -1,7 +1,9 @@
 import { gql } from "@apollo/client";
 import { getGitLabGQL, gitlab } from "../common";
 import { MRDiscussion, MRDiscussionNote, User } from "../gitlabapi";
-const MR_DISCUSSIONS_PAGE_SIZE = 25;
+import { MAX_DISCUSSION_CONTEXT_CHARS, MAX_DISCUSSION_NOTE_CHARS } from "../limits";
+
+export const MR_DISCUSSIONS_PAGE_SIZE = 25;
 
 const DISCUSSION_NOTE_FIELDS = gql`
   fragment DiscussionNoteFields on Note {
@@ -41,7 +43,7 @@ const MR_DISCUSSIONS = gql`
             id
             resolvable
             resolved
-            notes(first: 100) {
+            notes(first: 50) {
               nodes {
                 ...DiscussionNoteFields
               }
@@ -74,7 +76,7 @@ const DISCUSSION_TOGGLE_RESOLVE = gql`
 `;
 
 const MR_DISCUSSION_DIFF = gql`
-  query MergeRequestDiscussionDiff($fullPath: ID!, $headSha: String!, $contextRef: String!, $filePath: String!) {
+  query MergeRequestDiscussionDiff($fullPath: ID!, $headSha: String!) {
     project(fullPath: $fullPath) {
       repository {
         commit(ref: $headSha) {
@@ -82,11 +84,6 @@ const MR_DISCUSSION_DIFF = gql`
             diff
             newPath
             oldPath
-          }
-        }
-        blobs(paths: [$filePath], ref: $contextRef, first: 1) {
-          nodes {
-            rawTextBlob
           }
         }
       }
@@ -140,11 +137,11 @@ interface GqlDiffNode {
   oldPath?: string | null;
 }
 
-interface GqlBlobNode {
-  rawTextBlob?: string | null;
-}
-
 const endCursorsByCacheKey = new Map<string, string[]>();
+
+export function resetMRDiscussionGqlCursors(cacheKey: string): void {
+  endCursorsByCacheKey.delete(cacheKey);
+}
 
 export function resolveAvatarUrl(avatarUrl: string | null | undefined): string {
   if (!avatarUrl) {
@@ -189,7 +186,7 @@ function gqlDiscussionNoteToNote(node: GqlDiscussionNoteNode): MRDiscussionNote 
       } as User)
     : undefined;
   return {
-    body: node.body,
+    body: node.body.slice(0, MAX_DISCUSSION_NOTE_CHARS),
     author,
     created_at: node.createdAt,
     web_url: node.url ?? "",
@@ -366,20 +363,6 @@ function extractFocusedHunk(diff: string, position: NonNullable<MRDiscussionNote
   return hunks.find((hunkLines) => hunkContainsLine(hunkLines, position))?.join("\n");
 }
 
-function extractBlobContext(text: string, position: NonNullable<MRDiscussionNote["position"]>): string | undefined {
-  if (!position.line) {
-    return undefined;
-  }
-  const lines = text.split("\n");
-  const start = Math.max(position.line - 4, 1);
-  const end = Math.min(position.line + 4, lines.length);
-  const prefix = position.line_type === "old" ? "-" : "+";
-  return lines
-    .slice(start - 1, end)
-    .map((line, offset) => `${start + offset === position.line ? prefix : " "} ${line}`)
-    .join("\n");
-}
-
 export async function fetchMRDiscussionDiffGql(options: {
   projectFullPath: string;
   position: NonNullable<MRDiscussionNote["position"]>;
@@ -387,28 +370,21 @@ export async function fetchMRDiscussionDiffGql(options: {
   if (!options.position.head_sha) {
     return undefined;
   }
-  const contextRef =
-    options.position.line_type === "old"
-      ? (options.position.start_sha ?? options.position.head_sha)
-      : options.position.head_sha;
   const response = await getGitLabGQL().client.query({
     query: MR_DISCUSSION_DIFF,
     variables: {
       fullPath: options.projectFullPath,
       headSha: options.position.head_sha,
-      contextRef,
-      filePath: options.position.file_path,
     },
   });
   const diffs = response.data?.project?.repository?.commit?.diffs as GqlDiffNode[] | undefined;
   const diff = diffs?.find(
     (candidate) => candidate.newPath === options.position.file_path || candidate.oldPath === options.position.file_path,
   )?.diff;
-  if (diff) {
+  if (diff && diff.length <= MAX_DISCUSSION_CONTEXT_CHARS) {
     return extractFocusedHunk(diff, options.position) ?? diff;
   }
-  const blob = response.data?.project?.repository?.blobs?.nodes?.[0] as GqlBlobNode | undefined;
-  return blob?.rawTextBlob ? extractBlobContext(blob.rawTextBlob, options.position) : undefined;
+  return undefined;
 }
 
 export async function createMRDiscussionNoteGql(options: {
